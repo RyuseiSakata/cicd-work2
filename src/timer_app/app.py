@@ -5,6 +5,7 @@ try:
     from timer_app.timer import app, main
 except ModuleNotFoundError:  # `python app.py` を src/timer_app で実行
     from timer import app, main
+    
 
 
 if __name__ == "__main__":
