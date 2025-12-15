@@ -1,20 +1,55 @@
 <!doctype html>
 <html lang="ja">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Timer App</title>
   <style>
-    body { font-family: sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
-    .row { display:flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
-    button { padding: 10px 14px; font-size: 16px; cursor: pointer; }
-    .panel { border: 1px solid #ddd; border-radius: 10px; padding: 16px; }
-    .big { font-size: 44px; font-weight: 700; letter-spacing: 1px; }
-    .muted { color: #666; }
-    ul { padding-left: 18px; }
+    body {
+      font-family: sans-serif;
+      max-width: 720px;
+      margin: 40px auto;
+      padding: 0 16px;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 12px 0;
+    }
+
+    button {
+      padding: 10px 14px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    .panel {
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 16px;
+    }
+
+    .big {
+      font-size: 44px;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+
+    .muted {
+      color: #666;
+    }
+
+    ul {
+      padding-left: 18px;
+    }
   </style>
 </head>
+
 <body>
+
   <h1>Timer App</h1>
 
   <div class="panel">
@@ -34,45 +69,93 @@
     <ul id="laps"></ul>
   </div>
 
-<script>
-  const $ = (id) => document.getElementById(id);
+  <script>
+    const $ = (id) => document.getElementById(id);
 
-  function fmt(ms) {
-    const m = Math.floor(ms / 60000);
-    const s = Math.floor((ms % 60000) / 1000);
-    const r = ms % 1000;
-    return String(m).padStart(2,'0') + ":" + String(s).padStart(2,'0') + "." + String(r).padStart(3,'0');
-  }
+    /* -----------------------------------
+       時間表示のためのローカル状態
+    ----------------------------------- */
+    let running = false;
+    let localStart = null;        // running になった瞬間のローカル時刻
+    let localBaseElapsed = 0;     // stop → start で繰り返す累積時間
 
-  async function api(path, method="GET") {
-    const res = await fetch(path, { method });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw { status: res.status, body };
-    return body;
-  }
-
-  async function refresh() {
-    const t = await api("/timer");
-    $("state").textContent = t.state;
-    $("time").textContent = fmt(t.elapsed_ms);
-
-    const ul = $("laps");
-    ul.innerHTML = "";
-    for (const lap of t.laps) {
-      const li = document.createElement("li");
-      li.textContent = `#${lap.lap_index}  lap=${fmt(lap.lap_elapsed_ms)}  total=${fmt(lap.total_elapsed_ms)}`;
-      ul.appendChild(li);
+    function fmt(ms) {
+      const m = Math.floor(ms / 60000);
+      const s = Math.floor((ms % 60000) / 1000);
+      const r = ms % 1000;
+      return String(m).padStart(2, '0') + ":" +
+        String(s).padStart(2, '0') + "." +
+        String(r).padStart(3, '0');
     }
-  }
 
-  $("start").onclick = async () => { try { await api("/timer/start","POST"); } catch(e){} await refresh(); };
-  $("stop").onclick  = async () => { try { await api("/timer/stop","POST"); } catch(e){} await refresh(); };
-  $("lap").onclick   = async () => { try { await api("/timer/lap","POST"); } catch(e){} await refresh(); };
-  $("reset").onclick = async () => { try { await api("/timer/reset","POST"); } catch(e){} await refresh(); };
+    async function api(path, method = "GET") {
+      const res = await fetch(path, { method });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw { status: res.status, body };
+      return body;
+    }
 
-  // 画面は500msごとに更新（runningの時だけ時間が動く）
-  setInterval(refresh, 500);
-  refresh();
-</script>
+    /* -----------------------------------
+       API の状態を UI に反映する処理（500msごと）
+    ----------------------------------- */
+    async function refresh() {
+      const t = await api("/timer");
+
+      $("state").textContent = t.state;
+
+      const nowRunning = t.state === "running";
+
+      if (!nowRunning) {
+        // 停止状態 → 時間は API の値をそのまま描画
+        running = false;
+        localStart = null;
+        localBaseElapsed = t.elapsed_ms;
+        $("time").textContent = fmt(t.elapsed_ms);
+      } else {
+        // running に入った瞬間のみ基準時刻を更新
+        if (!running) {
+          localStart = Date.now() - t.elapsed_ms;
+          localBaseElapsed = 0;
+        }
+        running = true;
+      }
+
+      // ラップ一覧更新
+      const ul = $("laps");
+      ul.innerHTML = "";
+      for (const lap of t.laps) {
+        const li = document.createElement("li");
+        li.textContent = `#${lap.lap_index} lap=${fmt(lap.lap_elapsed_ms)} total=${fmt(lap.total_elapsed_ms)}`;
+        ul.appendChild(li);
+      }
+    }
+
+    /* -----------------------------------
+       リアルタイムで時間を滑らかに描画
+       → requestAnimationFrame がポイント
+    ----------------------------------- */
+    function renderLoop() {
+      if (running && localStart !== null) {
+        const ms = Date.now() - localStart;
+        $("time").textContent = fmt(ms);
+      }
+      requestAnimationFrame(renderLoop);
+    }
+    renderLoop();
+
+    /* -----------------------------------
+       ボタン操作
+    ----------------------------------- */
+    $("start").onclick = async () => { try { await api("/timer/start", "POST"); } catch (e) { } await refresh(); };
+    $("stop").onclick = async () => { try { await api("/timer/stop", "POST"); } catch (e) { } await refresh(); };
+    $("lap").onclick = async () => { try { await api("/timer/lap", "POST"); } catch (e) { } await refresh(); };
+    $("reset").onclick = async () => { try { await api("/timer/reset", "POST"); } catch (e) { } await refresh(); };
+
+    // 初回読み込み & 500ms ごと状態同期
+    setInterval(refresh, 500);
+    refresh();
+  </script>
+
 </body>
+
 </html>
