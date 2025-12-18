@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>CI/CD Calculator</title>
+  <style>
+    body { font-family: sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
+    .card { border: 1px solid #ddd; border-radius: 14px; padding: 16px; }
+    .row { display:flex; gap: 10px; flex-wrap: wrap; align-items:center; margin: 10px 0; }
+    input, select, button { padding: 10px 12px; font-size: 16px; border-radius: 10px; border: 1px solid #ddd; }
+    button { cursor: pointer; }
+    .big { font-size: 34px; font-weight: 700; }
+    .muted { color: #666; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .ok { color: #0a7; }
+    .ng { color: #d33; }
+  </style>
+</head>
+<body>
+  <h1>CI/CD Calculator</h1>
+  <p class="muted">四則演算 + CI（pytest） + CD（Render）を体験するための最小アプリ。</p>
+
+  <div class="card">
+    <div class="row">
+      <input id="a" type="number" step="any" placeholder="a" value="2" />
+      <select id="op">
+        <option value="+">+</option>
+        <option value="-">-</option>
+        <option value="*">*</option>
+        <option value="/">/</option>
+      </select>
+      <input id="b" type="number" step="any" placeholder="b" value="3" />
+      <button id="run">計算</button>
+    </div>
+
+    <div class="muted">Result</div>
+    <div class="big mono" id="result">-</div>
+
+    <div class="row muted mono">
+      <span>API:</span>
+      <span>POST /calc</span>
+      <span>GET /health</span>
+    </div>
+
+    <div class="row">
+      <span id="status" class="muted">-</span>
+    </div>
+  </div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  async function postCalc(a, op, b) {
+    const res = await fetch("/calc", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ a, op, b })
+    });
+    const body = await res.json().catch(() => ({}));
+    return { ok: res.ok, status: res.status, body };
+  }
+
+  $("run").onclick = async () => {
+    const a = $("a").value;
+    const op = $("op").value;
+    const b = $("b").value;
+
+    $("status").textContent = "計算中…";
+    $("status").className = "muted";
+
+    const { ok, status, body } = await postCalc(a, op, b);
+
+    if (ok) {
+      $("result").textContent = body.result;
+      $("status").textContent = `OK (${status})`;
+      $("status").className = "ok mono";
+    } else {
+      $("result").textContent = "-";
+      $("status").textContent = `NG (${status}) error=${body.error || "UNKNOWN"}`;
+      $("status").className = "ng mono";
+    }
+  };
+</script>
+</body>
+</html>
